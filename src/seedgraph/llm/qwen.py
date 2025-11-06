@@ -113,4 +113,5 @@ class QwenGenerator:
             New prompt with token appended
         """
         token_text = self.tokenizer.decode([token_id])
-        return (prompt + token_text).strip()
+        # Don't strip! Whitespace tokens (spaces, newlines) are meaningful
+        return prompt + token_text
