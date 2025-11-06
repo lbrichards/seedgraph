@@ -205,3 +205,25 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# SeedGraph-specific
+# Data and checkpoint directories (ignore contents but keep .gitkeep)
+checkpoints/*
+!checkpoints/.gitkeep
+data/*
+!data/.gitkeep
+*.jsonl
+
+# Downloaded models (if stored locally)
+models/
+.cache/
+
+# Large binary files
+*.bin
+*.safetensors
+*.onnx
+*.pb
+
+# Temporary run files
+run_*.json
+*.tmp

@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "seedgraph"
+version = "0.1.0"
+description = "Recursive knowledge-graph generator using Qwen-2.5-0.5B logit introspection"
+authors = ["SeedGraph Team"]
+readme = "README.md"
+packages = [{include = "seedgraph", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+torch = ">=2.2.0"
+transformers = ">=4.44.0"
+tokenizers = ">=0.15.0"
+accelerate = ">=0.33.0"
+networkx = ">=3.2"
+numpy = ">=1.26"
+pandas = ">=2.2"
+tqdm = ">=4.66"
+matplotlib = ">=3.8"
+scikit-learn = ">=1.4"
+typer = ">=0.12"
+loguru = ">=0.7"
+rich = ">=13.7"
+orjson = ">=3.9"
+faiss-cpu = ">=1.8"
+
+[tool.poetry.scripts]
+seedgraph = "seedgraph.cli:app"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
+pytest-cov = ">=4.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
