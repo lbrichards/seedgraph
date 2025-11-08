@@ -334,6 +334,179 @@ def build_seeds(
 
 
 @app.command()
+def expand_leaves(
+    checkpoint: Path = typer.Option(
+        ...,
+        "--checkpoint",
+        "-c",
+        help="Input checkpoint file from SeedGraph grow"
+    ),
+    output: Path = typer.Option(
+        Path("data/passages.jsonl"),
+        "--output",
+        "-o",
+        help="Output file for generated passages"
+    ),
+    target_words: int = typer.Option(
+        1000,
+        "--target-words",
+        "-w",
+        help="Target word count per passage"
+    ),
+    model_name: str = typer.Option(
+        "Qwen/Qwen2.5-7B",
+        "--model",
+        "-m",
+        help="HuggingFace model name"
+    ),
+    device: Optional[str] = typer.Option(
+        None,
+        "--device",
+        help="Device to run on (None = auto)"
+    ),
+    temperatures: str = typer.Option(
+        "1.0,2.0,3.0,4.0",
+        "--temperatures",
+        help="Comma-separated temperature values (generates one passage per temperature)"
+    ),
+    top_p: float = typer.Option(
+        0.9,
+        "--top-p",
+        help="Nucleus sampling parameter"
+    ),
+    max_passages: Optional[int] = typer.Option(
+        None,
+        "--max-passages",
+        help="Maximum number of passages to generate (None = all leaves)"
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging"
+    )
+):
+    """
+    Expand diverse leaves from SeedGraph into long-form passages.
+
+    Takes a checkpoint from 'seedgraph grow' and generates 1000-word
+    passages from each diverse leaf node.
+
+    Example:
+        seedgraph expand-leaves --checkpoint checkpoints/ckpt_*.jsonl.zst --target-words 1000
+    """
+    # Configure logging
+    logger.remove()
+    log_level = "DEBUG" if verbose else "INFO"
+    logger.add(sys.stderr, level=log_level, format="<level>{level: <8}</level> | {message}")
+
+    # Display banner
+    console.print(Panel.fit(
+        "[bold cyan]SeedGraph - Passage Expander[/bold cyan]\n"
+        f"Generating {target_words}-word passages from diverse seeds",
+        border_style="cyan"
+    ))
+
+    try:
+        from seedgraph.core.slim_checkpoint import SlimCheckpointLoader
+        from seedgraph.generation.passage_generator import PassageGenerator
+        from seedgraph.llm.qwen import QwenGenerator
+        from tqdm import tqdm
+        import json
+
+        # Load checkpoint
+        console.print(f"\n[yellow]Loading checkpoint: {checkpoint}[/yellow]")
+        loader = SlimCheckpointLoader(checkpoint)
+        ckpt_data = loader.load()
+
+        # Get unexpanded leaves
+        frontier = ckpt_data['frontier']
+        leaves = [node for node in frontier]  # All frontier nodes are potential seeds
+
+        if max_passages:
+            leaves = leaves[:max_passages]
+
+        console.print(f"[green]Found {len(leaves)} diverse leaf nodes[/green]")
+
+        # Initialize generator
+        console.print(f"\n[yellow]Loading model: {model_name}[/yellow]")
+        generator = QwenGenerator(model_name=model_name, device=device)
+
+        # Parse temperatures
+        temp_list = [float(t.strip()) for t in temperatures.split(',')]
+        console.print(f"[cyan]Temperatures: {temp_list}[/cyan]")
+        console.print(f"[cyan]Passages per seed: {len(temp_list)}[/cyan]")
+
+        # Initialize passage generator
+        passage_gen = PassageGenerator(
+            generator=generator,
+            target_words=target_words,
+            temperature=temp_list[0],  # Default, will be overridden
+            top_p=top_p
+        )
+
+        # Reconstruct prompts from token_ids and generate passages
+        console.print(f"\n[green]Generating {target_words}-word passages with {len(temp_list)} temperatures...[/green]\n")
+
+        seed_prompt = ckpt_data['run_meta']['seed']
+        generated_count = 0
+        total_words = 0
+
+        # Ensure output directory exists
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output, 'w') as f:
+            for leaf in tqdm(leaves, desc="Generating passages", unit="seed"):
+                # Reconstruct prompt
+                if leaf.token_ids:
+                    leaf_text = seed_prompt + generator.tokenizer.decode(leaf.token_ids)
+                else:
+                    leaf_text = seed_prompt
+
+                # Generate multiple passages with different temperatures
+                multi_results = passage_gen.generate_multiple_temperatures(leaf_text, temp_list)
+
+                # Write each result
+                for result in multi_results:
+                    record = {
+                        "seed_prompt": leaf_text,
+                        "generated_text": result['generated_text'],
+                        "word_count": result['word_count'],
+                        "token_count": result['token_count'],
+                        "temperature": result['temperature'],
+                        "depth": leaf.depth,
+                        "parent_id": leaf.parent_id
+                    }
+
+                    f.write(json.dumps(record) + '\n')
+
+                    generated_count += 1
+                    total_words += result['word_count']
+
+        avg_words = total_words / generated_count if generated_count > 0 else 0
+        seeds_processed = len(leaves)
+        passages_per_seed = len(temp_list)
+
+        # Display results
+        console.print(Panel(
+            f"[bold green]Passage Generation Complete![/bold green]\n\n"
+            f"Seeds processed: {seeds_processed}\n"
+            f"Passages per seed: {passages_per_seed} (temps: {temp_list})\n"
+            f"Total passages: {generated_count}\n"
+            f"Total words: {total_words:,}\n"
+            f"Avg words per passage: {avg_words:.0f}\n"
+            f"Output: {output}",
+            border_style="green",
+            title="Results"
+        ))
+
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        logger.exception("Error during passage generation")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def info():
     """
     Display information about SeedGraph.
