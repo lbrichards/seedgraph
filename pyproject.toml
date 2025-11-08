@@ -8,7 +8,7 @@ packages = [{include = "seedgraph", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-torch = ">=2.2.0"
+torch = ">=2.8.0"
 transformers = ">=4.44.0"
 tokenizers = ">=0.15.0"
 accelerate = ">=0.33.0"
