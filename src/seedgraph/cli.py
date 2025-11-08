@@ -253,6 +253,87 @@ def grow(
 
 
 @app.command()
+def build_seeds(
+    target_seeds: int = typer.Option(
+        3000,
+        "--target-seeds",
+        "-n",
+        help="Target number of seeds to generate"
+    ),
+    near_dup_threshold: float = typer.Option(
+        0.92,
+        "--near-dup-threshold",
+        help="Cosine similarity threshold for near-duplicates"
+    ),
+    tier3_fraction: float = typer.Option(
+        0.2,
+        "--tier3-fraction",
+        help="Fraction of seeds to wrap with prompts (Tier-3)"
+    ),
+    output_dir: Path = typer.Option(
+        Path("data/seeds"),
+        "--output-dir",
+        "-o",
+        help="Output directory for seed files"
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Enable verbose logging"
+    )
+):
+    """
+    Build diverse seed topic list for LM-head generation.
+
+    Generates seeds_v1.jsonl and seeds_stats.json with high-diversity
+    topics across 12 domains.
+    """
+    # Configure logging
+    logger.remove()
+    log_level = "DEBUG" if verbose else "INFO"
+    logger.add(sys.stderr, level=log_level, format="<level>{level: <8}</level> | {message}")
+
+    # Display banner
+    console.print(Panel.fit(
+        "[bold cyan]SeedGraph - Seed List Builder[/bold cyan]\n"
+        "Generating diverse seed topics for LM-head exploration",
+        border_style="cyan"
+    ))
+
+    try:
+        from seedgraph.seeds.builder import SeedListBuilder
+
+        # Initialize builder
+        builder = SeedListBuilder(
+            target_total_seeds=target_seeds,
+            near_dup_threshold=near_dup_threshold,
+            tier3_fraction=tier3_fraction,
+            output_dir=output_dir
+        )
+
+        # Build seed list
+        console.print("\n[yellow]Building seed list...[/yellow]\n")
+        stats = builder.build()
+
+        # Display success
+        console.print(Panel(
+            f"[bold green]Seed List Generation Complete![/bold green]\n\n"
+            f"Total Seeds: {stats['total_seeds']}\n"
+            f"95th Percentile Similarity: {stats['pairwise_similarity_percentiles']['95th']:.4f}\n"
+            f"KMeans Utilization: {stats['kmeans_clusters_with_5plus']}/{stats['kmeans_total_clusters']}\n"
+            f"Output: {output_dir}/seeds_v1.jsonl",
+            border_style="green",
+            title="Results"
+        ))
+
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        logger.exception("Error during seed list generation")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def info():
     """
     Display information about SeedGraph.
