@@ -11,6 +11,8 @@ from seedgraph.llm.qwen import QwenGenerator
 from seedgraph.core.graph_store import GraphStore
 from seedgraph.core.selection import CoverageSelector
 from seedgraph.core.brancher import Brancher
+from seedgraph.core.slim_brancher import SlimBrancher
+from seedgraph.core.slim_checkpoint import SlimCheckpointLoader
 
 app = typer.Typer(
     name="seedgraph",
@@ -88,6 +90,42 @@ def grow(
         None,
         "--run-id",
         help="Unique identifier for this run"
+    ),
+    # Slim output options
+    slim_output: bool = typer.Option(
+        False,
+        "--slim-output",
+        help="Enable slim output mode (minimal disk usage)"
+    ),
+    leaves_only: bool = typer.Option(
+        True,
+        "--leaves-only/--all-nodes",
+        help="Save only leaf nodes to corpus (default: True)"
+    ),
+    save_topk: bool = typer.Option(
+        False,
+        "--save-topk/--no-topk",
+        help="Include top-k tokens in checkpoint"
+    ),
+    save_logits: bool = typer.Option(
+        False,
+        "--save-logits/--no-logits",
+        help="Include logits/probs in checkpoint"
+    ),
+    compression: str = typer.Option(
+        "zstd",
+        "--compression",
+        help="Compression type (zstd or gzip)"
+    ),
+    include_token_ids: bool = typer.Option(
+        False,
+        "--include-token-ids",
+        help="Include token IDs in corpus for exact reconstruction"
+    ),
+    resume_from: Optional[Path] = typer.Option(
+        None,
+        "--resume-from",
+        help="Resume from checkpoint file"
     )
 ):
     """
@@ -116,9 +154,6 @@ def grow(
         logger.info("Loading Qwen generator...")
         generator = QwenGenerator(model_name=model_name, device=device)
 
-        logger.info("Initializing graph store...")
-        store = GraphStore()
-
         logger.info("Initializing coverage selector...")
         # Get vocab size from tokenizer
         vocab_size = len(generator.tokenizer)
@@ -128,24 +163,76 @@ def grow(
             pca_dims=pca_dims
         )
 
-        logger.info("Initializing brancher...")
-        brancher = Brancher(
-            generator=generator,
-            store=store,
-            selector=selector,
-            top_k=top_k,
-            max_nodes=max_nodes,
-            max_depth=max_depth,
-            checkpoint_interval=checkpoint_interval,
-            checkpoint_dir=checkpoint_dir
-        )
+        # Handle resume if specified
+        resume_data = None
+        if resume_from:
+            logger.info(f"Loading checkpoint from {resume_from}")
+            loader = SlimCheckpointLoader(resume_from)
+            resume_data = loader.load()
+            console.print(f"[yellow]Resuming from checkpoint with {len(resume_data['frontier'])} frontier nodes[/yellow]")
 
-        # Start growth
-        console.print("\n[green]Starting graph growth...[/green]\n")
-        brancher.grow(seed_prompt=prompt, run_id=run_id)
+        # Choose brancher based on slim_output flag
+        if slim_output:
+            logger.info("Initializing slim brancher...")
+            brancher = SlimBrancher(
+                generator=generator,
+                selector=selector,
+                top_k=top_k,
+                max_nodes=max_nodes,
+                max_depth=max_depth,
+                checkpoint_interval=checkpoint_interval,
+                checkpoint_dir=checkpoint_dir,
+                compression=compression,
+                leaves_only=leaves_only,
+                save_topk=save_topk,
+                save_logits=save_logits,
+                include_token_ids=include_token_ids
+            )
 
-        # Display final statistics
-        stats = store.get_stats()
+            # Start growth
+            console.print("\n[green]Starting graph growth (SLIM MODE)...[/green]\n")
+            result = brancher.grow(seed_prompt=prompt, run_id=run_id, resume_data=resume_data)
+
+            # Display final statistics
+            stats = {
+                "total_nodes": result["total_nodes"],
+                "total_edges": result.get("total_edges", result["total_nodes"] - 1),
+                "unexpanded_nodes": result.get("frontier_nodes", 0),
+                "expanded_nodes": result["expanded_nodes"],
+                "max_depth": result["max_depth"]
+            }
+
+            # Display file paths and sizes
+            import os
+            ckpt_size = os.path.getsize(result["checkpoint_path"]) / (1024 * 1024)
+            corpus_size = os.path.getsize(result["corpus_path"]) / (1024 * 1024) if result["corpus_path"].exists() else 0
+
+            console.print(f"\n[cyan]Checkpoint:[/cyan] {result['checkpoint_path']} ({ckpt_size:.2f} MB)")
+            console.print(f"[cyan]Corpus:[/cyan] {result['corpus_path']} ({corpus_size:.2f} MB)")
+            console.print(f"[green]Total size:[/green] {ckpt_size + corpus_size:.2f} MB")
+
+        else:
+            logger.info("Initializing graph store...")
+            store = GraphStore()
+
+            logger.info("Initializing brancher...")
+            brancher = Brancher(
+                generator=generator,
+                store=store,
+                selector=selector,
+                top_k=top_k,
+                max_nodes=max_nodes,
+                max_depth=max_depth,
+                checkpoint_interval=checkpoint_interval,
+                checkpoint_dir=checkpoint_dir
+            )
+
+            # Start growth
+            console.print("\n[green]Starting graph growth...[/green]\n")
+            brancher.grow(seed_prompt=prompt, run_id=run_id)
+
+            # Display final statistics
+            stats = store.get_stats()
         console.print(Panel(
             f"[bold green]Graph Growth Complete![/bold green]\n\n"
             f"Total Nodes: {stats['total_nodes']}\n"
