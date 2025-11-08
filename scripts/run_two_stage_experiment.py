@@ -188,10 +188,10 @@ def main():
     print("TWO-STAGE BATCH EXPERIMENTS")
     print("="*80)
     print(f"Total domains: {len(DOMAINS)}")
-    print(f"Stage 1: {1000} diverse seeds per domain")
+    print(f"Stage 1: {10} diverse seeds per domain")
     print(f"Stage 2: 1000-word passages × 4 temperatures = 4 passages per seed")
-    print(f"Expected passages per domain: ~800-1000 seeds × 4 temps = ~3,200-4,000")
-    print(f"Total passages: ~38,400-48,000 across all domains")
+    print(f"Expected passages per domain: ~8-10 seeds × 4 temps = ~32-40")
+    print(f"Total passages: ~384-480 across all domains")
     print(f"Model: Qwen/Qwen2.5-7B")
     print(f"Output: {output_dir}")
     print("="*80)
@@ -205,7 +205,7 @@ def main():
             stats = run_two_stage_domain_experiment(
                 domain=domain,
                 seed_topic=seed_topic,
-                diversity_nodes=1000,
+                diversity_nodes=10,  # Scaled back by 100x
                 target_words=1000,
                 temperatures="1.0,2.0,3.0,4.0",
                 model="Qwen/Qwen2.5-7B",
